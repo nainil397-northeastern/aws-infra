@@ -15,7 +15,7 @@ Terraform
 Prerequisites for local -
 * Create new a new private GitHub repository in the GitHub organization you created, with name must be aws-infra.
 * Creating a .gitignore file using the ready template while creating the repository. In my case I used the Terraform template
-* Write the workflow in .github/worflows to be executed before merging the pull request to organization/main
+* Write the workflow in .github/workflows to be executed before merging the pull request to organization/main
 * Set the required branch protections in organization/main to avoid merging of pull request if the PR fails
 
 Build and Deploy instructions for AWS Networking Setup -
