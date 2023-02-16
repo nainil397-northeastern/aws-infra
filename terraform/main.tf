@@ -6,8 +6,8 @@ module "myNetwork" {
   count  = var.vpc_count
   source = "./module/networking"
   # cidr   = local.vpc_cidrs[count.index]
-  cidr = "${var.cidr}"
-  
+  cidr = var.cidr
+
   priv_sub_count = var.priv_sub_count
   pub_sub_count  = var.pub_sub_count
   region         = var.region
