@@ -1,6 +1,6 @@
 locals {
   private_subnet_cidrs = [for netnumber in range(1, var.priv_sub_count + 1) : cidrsubnet(var.cidr, 8, netnumber)]
-  public_subnet_cidrs = [for netnumber in range(var.priv_sub_count + 1, var.priv_sub_count + var.pub_sub_count + 1) : cidrsubnet(var.cidr, 8, netnumber)]
+  public_subnet_cidrs  = [for netnumber in range(var.priv_sub_count + 1, var.priv_sub_count + var.pub_sub_count + 1) : cidrsubnet(var.cidr, 8, netnumber)]
 }
 
 resource "aws_vpc" "nainil" {
@@ -13,8 +13,8 @@ resource "aws_vpc" "nainil" {
 
 resource "aws_subnet" "nainil_private_subnet" {
   vpc_id = aws_vpc.nainil.id
-  
-  count = var.priv_sub_count
+
+  count             = var.priv_sub_count
   cidr_block        = element(local.private_subnet_cidrs, count.index)
   availability_zone = data.aws_availability_zones.azs.names[count.index % length(data.aws_availability_zones.azs.names)]
 
@@ -32,9 +32,9 @@ resource "aws_subnet" "nainil_private_subnet" {
 
 resource "aws_subnet" "nainil_public_subnet" {
   vpc_id = aws_vpc.nainil.id
-  
-  count = var.pub_sub_count
-  cidr_block = element(local.public_subnet_cidrs, count.index)
+
+  count             = var.pub_sub_count
+  cidr_block        = element(local.public_subnet_cidrs, count.index)
   availability_zone = data.aws_availability_zones.azs.names[count.index]
 
   map_public_ip_on_launch = true

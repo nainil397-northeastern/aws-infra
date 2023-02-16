@@ -1,13 +1,13 @@
 variable "cidr" {
   type        = string
   description = "CIDR for the VPC"
- // default     = "10.0.0.0/8"
+  // default     = "10.0.0.0/8"
 }
 
 variable "vpc_count" {
   type        = string
   description = "Count of total number of VPCs"
- // default     = "1"
+  // default     = "1"
 }
 
 variable "priv_sub_count" {
@@ -29,7 +29,7 @@ variable "region" {
 
 variable "environment" {
   description = " deployment environment "
- // default     = "dev"
+  // default     = "dev"
 }
 
 data "aws_availability_zones" "azs" {}

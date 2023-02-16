@@ -7,7 +7,7 @@ variable "cidr" {
 variable "priv_sub_count" {
   type        = string
   description = "Count of the total number of private subnets"
- // default     = "3"
+  // default     = "3"
 }
 
 variable "pub_sub_count" {
