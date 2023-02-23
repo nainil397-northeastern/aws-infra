@@ -32,3 +32,10 @@ Steps to be implemented --
 * Create multiple VPCs (and resources) without any conflicts in the same AWS account & same region
 * Create other VPCs (and resources) without any conflicts in different AWS regions
 * Cleanup of networking resources using the terraform destroy command
+
+### Important Terraform commands
+1. terraform fmt
+2. terraform init
+3. terraform plan -var-file="fileName.tfvars"
+4. terraform apply
+5. terraform destroy
