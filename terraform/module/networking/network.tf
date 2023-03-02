@@ -3,6 +3,11 @@ locals {
   public_subnet_cidrs  = [for netnumber in range(var.priv_sub_count + 1, var.priv_sub_count + var.pub_sub_count + 1) : cidrsubnet(var.cidr, 8, netnumber)]
 }
 
+data "aws_ami" "recent" {
+  most_recent = true
+  owners      = ["865632327924"]
+}
+
 resource "aws_vpc" "nainil" {
   cidr_block = var.cidr
 
@@ -78,7 +83,7 @@ resource "aws_route_table" "nainil_public_route_table" {
 
 resource "aws_route" "nainil_public_route" {
   route_table_id         = aws_route_table.nainil_public_route_table.id
-  destination_cidr_block = var.destination_cidr
+  destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.nainil_internet_gateway.id
 
   depends_on = [
@@ -178,12 +183,32 @@ resource "aws_key_pair" "nainil_ec2_key" {
 }
 
 resource "aws_instance" "nainil_aws" {
-  ami                         = var.my_ami_id
+  #ami                        = var.my_ami_id
+  ami                         = data.aws_ami.recent.id
   instance_type               = var.instance_type
   key_name                    = aws_key_pair.nainil_ec2_key.key_name
   subnet_id                   = aws_subnet.nainil_public_subnet[0].id
   associate_public_ip_address = true
 
+  user_data = <<EOF
+
+#!/bin/bash
+sudo touch /etc/systemd/system/service.env
+sudo sh -c "echo 'DB_USERNAME=${aws_db_instance.mysql_db.username}' >> /etc/systemd/system/service.env"
+sudo sh -c "echo 'DB_HOST=${aws_db_instance.mysql_db.address}' >> /etc/systemd/system/service.env"
+sudo sh -c "echo 'DB_PORT=3306' >> /etc/systemd/system/service.env"
+
+sudo sh -c "echo 'DB_NAME=${aws_db_instance.mysql_db.db_name}' >> /etc/systemd/system/service.env"
+sudo sh -c "echo 'DB_PASSWORD=${aws_db_instance.mysql_db.password}' >> /etc/systemd/system/service.env"
+sudo sh -c "echo 'AWS_REGION=${var.region}' >> /etc/systemd/system/service.env"
+sudo sh -c "echo 'AWS_BUCKET_NAME=${aws_s3_bucket.my_image_bucket.bucket}' >> /etc/systemd/system/service.env"
+
+sudo systemctl start app2.service
+sudo systemctl enable app2.service
+
+EOF
+
+  iam_instance_profile = aws_iam_instance_profile.my_profile.id
   #   security_groups = ["application_security_group"]
   vpc_security_group_ids = [aws_security_group.application.id]
 
@@ -203,5 +228,262 @@ resource "aws_instance" "nainil_aws" {
     aws_security_group.application
   ]
 
+}
 
+resource "aws_db_subnet_group" "my_db_subnet" {
+  name       = "my_db_subnet"
+  subnet_ids = [aws_subnet.nainil_private_subnet[1].id, aws_subnet.nainil_private_subnet[2].id]
+
+  tags = {
+    Name = "My DB subnet group"
+  }
+
+  depends_on = [
+    aws_subnet.nainil_private_subnet
+  ]
+}
+
+resource "aws_db_instance" "mysql_db" {
+  identifier           = "csye6225"
+  engine               = "mysql"
+  engine_version       = "8.0"
+  instance_class       = "db.t3.micro"
+  allocated_storage    = 10
+  username             = "csye6225"
+  password             = "Abcde12345"
+  db_subnet_group_name = aws_db_subnet_group.my_db_subnet.name
+  db_name              = "csye6225"
+  multi_az             = false
+  # security_group_names = aws_security_group.database.name
+  vpc_security_group_ids = [aws_security_group.database.id]
+  publicly_accessible    = false
+  parameter_group_name   = aws_db_parameter_group.my_parameter_group.name
+  apply_immediately      = true
+  skip_final_snapshot    = true
+  depends_on = [
+    aws_db_subnet_group.my_db_subnet,
+    aws_db_parameter_group.my_parameter_group,
+    aws_security_group.database
+  ]
+}
+
+resource "aws_security_group" "database" {
+  name   = "database"
+  vpc_id = aws_vpc.nainil.id
+
+
+  ingress {
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    cidr_blocks     = [var.ingress_cidr]
+    security_groups = [aws_security_group.application.id]
+  }
+  egress {
+    from_port       = 0
+    protocol        = "-1"
+    to_port         = 0
+    cidr_blocks     = [var.ingress_cidr]
+    security_groups = [aws_security_group.application.id]
+  }
+  tags = {
+    Name = "database"
+  }
+
+  depends_on = [
+    aws_vpc.nainil
+  ]
+}
+
+resource "aws_db_parameter_group" "my_parameter_group" {
+  name   = "rds-pg"
+  family = "mysql8.0"
+
+  parameter {
+    name  = "character_set_server"
+    value = "utf8"
+  }
+
+  parameter {
+    name  = "character_set_client"
+    value = "utf8"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [
+    aws_vpc.nainil
+  ]
+}
+
+
+resource "random_id" "bucket_id" {
+  byte_length = 8
+}
+
+resource "aws_kms_key" "mykey" {
+  description             = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
+
+resource "aws_s3_bucket" "my_image_bucket" {
+  bucket = "${var.environment}-${random_id.bucket_id.hex}"
+
+  force_destroy = true
+
+  depends_on = [
+    random_id.bucket_id
+  ]
+}
+
+resource "aws_s3_bucket_public_access_block" "example" {
+  bucket = aws_s3_bucket.my_image_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+
+  depends_on = [
+    aws_s3_bucket.my_image_bucket
+  ]
+}
+
+resource "aws_s3_bucket_acl" "my_bucket_acl" {
+  bucket = aws_s3_bucket.my_image_bucket.id
+  acl    = "private"
+}
+
+resource "aws_s3_bucket_versioning" "versioning" {
+  bucket = aws_s3_bucket.my_image_bucket.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "versioning-bucket-config" {
+  # Must have bucket versioning enabled first
+  depends_on = [aws_s3_bucket_versioning.versioning]
+
+  bucket = aws_s3_bucket.my_image_bucket.id
+
+  rule {
+    id = "config"
+
+    filter {
+      prefix = "config/"
+    }
+
+    noncurrent_version_transition {
+      noncurrent_days = 30
+      storage_class   = "STANDARD_IA"
+    }
+
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "mySecurity" {
+  bucket = aws_s3_bucket.my_image_bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+
+      sse_algorithm = "AES256"
+    }
+  }
+
+  depends_on = [
+    aws_kms_key.mykey,
+    aws_s3_bucket.my_image_bucket
+  ]
+}
+
+
+resource "aws_iam_role" "EC2-CSYE6225" {
+  name                = "EC2-CSYE6225"
+  assume_role_policy  = data.aws_iam_policy_document.instance_assume_role_policy.json
+  managed_policy_arns = [aws_iam_policy.WebAppS3.arn]
+
+  depends_on = [
+    data.aws_iam_policy_document.instance_assume_role_policy,
+    aws_iam_policy.WebAppS3
+  ]
+}
+
+# resource "aws_iam_role_policy_attachment" "some_bucket_policy" {
+#   role       = aws_iam_role.some_role.name
+#   policy_arn = aws_iam_policy.bucket_policy.arn
+# }
+
+# resource "aws_s3_bucket_policy" "s3Policy" {
+#   bucket = aws_s3_bucket.my_image_bucket.id
+#   policy = jsonencode({
+#     "Version": "2012-10-17",
+#     "Statement": [
+#         {
+#             "Action": [
+#               "s3:PutObject",
+#               "s3:GetObject",
+#               "s3:ListBucket",
+#               "s3:DeleteObject"
+#             ],
+#             "Effect": "Allow",
+#             "Resource": [
+#                 "arn:aws:s3:::${aws_s3_bucket.my_image_bucket.bucket}",
+#                 "arn:aws:s3:::${aws_s3_bucket.my_image_bucket.bucket}/*"
+#             ]
+#         }
+#     ]})
+
+#     depends_on = [
+#       aws_s3_bucket.my_image_bucket
+#     ]
+# }
+resource "aws_iam_policy" "WebAppS3" {
+  name = "WebAppS3"
+
+  policy = jsonencode({
+    "Version" : "2012-10-17",
+    "Statement" : [
+      {
+        "Action" : [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:DeleteObject"
+        ],
+        "Effect" : "Allow",
+        "Resource" : [
+          "arn:aws:s3:::${aws_s3_bucket.my_image_bucket.bucket}",
+          "arn:aws:s3:::${aws_s3_bucket.my_image_bucket.bucket}/*"
+        ]
+      }
+  ] })
+
+  depends_on = [
+    aws_s3_bucket.my_image_bucket
+  ]
+}
+
+data "aws_iam_policy_document" "instance_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_instance_profile" "my_profile" {
+  name = "my-profile"
+  role = aws_iam_role.EC2-CSYE6225.name
+
+  depends_on = [
+    aws_iam_role.EC2-CSYE6225
+  ]
 }

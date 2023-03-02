@@ -6,8 +6,9 @@ region         = "us-east-1"
 environment    = "dev"
 
 ingress_cidr            = "0.0.0.0/0"
+destination_cidr        = "0.0.0.0/0"
 public_key_loc          = "C:\\Users\\naini\\.ssh\\ec2.pub"
-my_ami_id               = "ami-04c377cbbe9d20cd9"
+my_ami_id               = "ami-0796f1c6db9a55b0f"
 instance_type           = "t2.micro"
 delete_on_termination   = true
 volume_size             = 50
