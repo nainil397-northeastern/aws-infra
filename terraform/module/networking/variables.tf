@@ -1,3 +1,4 @@
+
 variable "region" {
   type        = string
   description = "Region for the VPC, subnets, gateway, route tables, etc."
@@ -94,6 +95,16 @@ variable "instance_type" {
   default     = "t2.micro"
 }
 
+
+variable "domain_name" {
+  type = string
+}
+
+variable "ttl_nainil" {
+  type    = number
+  default = 60
+}
+
 variable "delete_on_termination" {
   type    = bool
   default = true
@@ -119,7 +130,21 @@ variable "app_port" {
   default = 8080
 }
 
+
+variable "db_username" {
+  type = string
+}
+
+variable "db_password" {
+  type = string
+}
+
+variable "db_name" {
+  type = string
+}
+
 data "aws_availability_zones" "azs" {}
+
 
 
 

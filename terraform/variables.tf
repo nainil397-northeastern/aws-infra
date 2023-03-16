@@ -82,6 +82,15 @@ variable "public_key_loc" {
   default     = "C:\\Users\\User\\.ssh\\ec2.pub"
 }
 
+variable "domain_name" {
+  type = string
+}
+
+variable "ttl_nainil" {
+  type    = number
+  default = 60
+}
+
 variable "my_ami_id" {
   type        = string
   description = "Enter your custom AMI ID"
@@ -117,5 +126,18 @@ variable "app_port" {
   type    = number
   default = 8080
 }
+
+variable "db_username" {
+  type = string
+}
+
+variable "db_password" {
+  type = string
+}
+
+variable "db_name" {
+  type = string
+}
+
 
 data "aws_availability_zones" "azs" {}

@@ -124,6 +124,8 @@ resource "aws_route_table_association" "nainil_priv_rt_association" {
   ]
 }
 
+
+
 resource "aws_security_group" "application" {
   name   = "application"
   vpc_id = aws_vpc.nainil.id
@@ -249,10 +251,10 @@ resource "aws_db_instance" "mysql_db" {
   engine_version       = "8.0"
   instance_class       = "db.t3.micro"
   allocated_storage    = 10
-  username             = "csye6225"
-  password             = "Abcde12345"
+  username             = var.db_username
+  password             = var.db_password
   db_subnet_group_name = aws_db_subnet_group.my_db_subnet.name
-  db_name              = "csye6225"
+  db_name              = var.db_name
   multi_az             = false
   # security_group_names = aws_security_group.database.name
   vpc_security_group_ids = [aws_security_group.database.id]
@@ -276,16 +278,15 @@ resource "aws_security_group" "database" {
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    cidr_blocks     = [var.ingress_cidr]
     security_groups = [aws_security_group.application.id]
   }
-  egress {
-    from_port       = 0
-    protocol        = "-1"
-    to_port         = 0
-    cidr_blocks     = [var.ingress_cidr]
-    security_groups = [aws_security_group.application.id]
-  }
+  # egress {
+  #  from_port       = 0
+  #   protocol        = "-1"
+  #   to_port         = 0
+  #   cidr_blocks     = [var.ingress_cidr]
+  #   security_groups = [aws_security_group.application.id]
+  # }
   tags = {
     Name = "database"
   }
@@ -413,6 +414,34 @@ resource "aws_iam_role" "EC2-CSYE6225" {
   ]
 }
 
+
+
+output "public_ip" {
+  value = aws_instance.nainil_aws.public_ip
+}
+
+
+data "aws_route53_zone" "main" {
+  name = var.domain_name
+}
+
+resource "aws_route53_record" "web" {
+  name    = var.domain_name
+  type    = "A"
+  zone_id = data.aws_route53_zone.main.zone_id
+
+  ttl = var.ttl_nainil
+  records = [
+    aws_instance.nainil_aws.public_ip,
+  ]
+
+  depends_on = [
+    aws_instance.nainil_aws,
+    data.aws_route53_zone.main
+  ]
+}
+
+
 # resource "aws_iam_role_policy_attachment" "some_bucket_policy" {
 #   role       = aws_iam_role.some_role.name
 #   policy_arn = aws_iam_policy.bucket_policy.arn
@@ -442,6 +471,7 @@ resource "aws_iam_role" "EC2-CSYE6225" {
 #       aws_s3_bucket.my_image_bucket
 #     ]
 # }
+
 resource "aws_iam_policy" "WebAppS3" {
   name = "WebAppS3"
 
@@ -487,3 +517,6 @@ resource "aws_iam_instance_profile" "my_profile" {
     aws_iam_role.EC2-CSYE6225
   ]
 }
+
+
+

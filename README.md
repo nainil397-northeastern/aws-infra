@@ -1,10 +1,23 @@
 # aws-infra
-
  
-Infrastructure as a code with Terraform - Nainil Maladkar
+## Infrastructure as a code with Terraform - Nainil Maladkar
 
 This Terraform code block can be used for infrastructure setup and tear down.
 Terraform file is used for setting up our networking resources such as Virtual Private Cloud (VPC), Internet Gateway, Route Table, and Routes. 
+
+### Configuring Amazon Route 53 For DNS Service
+
+#### CREATE HOSTED ZONE FOR THE DOMAIN IN THE ROOT AWS ACCOUNT 
+1. Create a public hosted zone in `Amazon Route 53` for the domain `domainname.me`
+2. Configure Namecheap to use custom name servers to use the `Route53` name servers.
+
+#### CREATE A SUBDOMAIN & HOSTED ZONE FOR THE  DEMO AND DEV AWS ACCOUNT
+1. Create a public hosted zone in `Amazon Route 53` for the subdomain `demo/dev.domainname.me`
+2.  Configure name servers for the subdomain in the root account. See docs..
+
+### DNS & EC2 Instance A Record
+1. `Route53` should be updated from the Terraform template.
+2. The Terraform template should add/update `A` record to the Route53 zone so that your domain points to your EC2 instance and your web application is accessible through http://your-domain-name.tld/Links to an external site..
 
 
 Associated Tech:

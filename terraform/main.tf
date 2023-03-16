@@ -22,4 +22,10 @@ module "mynetwork" {
   volume_type             = var.volume_type
   disable_api_termination = var.disable_api_termination
   app_port                = var.app_port
+  ttl_nainil              = var.ttl_nainil
+  domain_name             = var.domain_name
+  db_name                 = var.db_name
+  db_password             = var.db_password
+  db_username             = var.db_username
+
 }
