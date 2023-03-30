@@ -205,8 +205,12 @@ sudo sh -c "echo 'DB_PASSWORD=${aws_db_instance.mysql_db.password}' >> /etc/syst
 sudo sh -c "echo 'AWS_REGION=${var.region}' >> /etc/systemd/system/service.env"
 sudo sh -c "echo 'AWS_BUCKET_NAME=${aws_s3_bucket.my_image_bucket.bucket}' >> /etc/systemd/system/service.env"
 
+
 sudo systemctl start app2.service
 sudo systemctl enable app2.service
+
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/cloudwatch-config.json
+
 
 EOF
 
@@ -414,6 +418,24 @@ resource "aws_iam_role" "EC2-CSYE6225" {
   ]
 }
 
+resource "aws_iam_policy" "cloudwatch_agent_policy" {
+  name = "CloudWatchAgentPolicy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "cloudwatch:PutMetricData",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Effect   = "Allow"
+        Resource = ["*"]
+      },
+    ]
+  })
+}
 
 
 output "public_ip" {
