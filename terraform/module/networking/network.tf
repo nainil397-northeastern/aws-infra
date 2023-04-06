@@ -132,31 +132,36 @@ resource "aws_security_group" "application" {
 
   #Incoming traffic
   ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ingress_cidr]
+    from_port = 22
+    to_port   = 22
+    protocol  = "tcp"
+    # cidr_blocks = [var.ingress_cidr]
+    security_groups = [aws_security_group.load_balancer.id]
+
   }
 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = [var.ingress_cidr]
-  }
+  #   ingress {
+  #     from_port   = 80
+  #     to_port     = 80
+  #     protocol    = "tcp"
+  #     cidr_blocks = [var.ingress_cidr]
+  #   }
+  #
+  #   ingress {
+  #     from_port   = 443
+  #     to_port     = 443
+  #     protocol    = "tcp"
+  #     cidr_blocks = [var.ingress_cidr]
+  #   }
 
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [var.ingress_cidr]
-  }
+    from_port = var.app_port
+    to_port   = var.app_port
+    protocol  = "tcp"
 
-  ingress {
-    from_port   = var.app_port
-    to_port     = var.app_port
-    protocol    = "tcp"
-    cidr_blocks = [var.ingress_cidr]
+    # cidr_blocks = [var.ingress_cidr]
+    security_groups = [aws_security_group.load_balancer.id]
+
   }
 
   #Outgoing traffic
@@ -171,28 +176,51 @@ resource "aws_security_group" "application" {
   }
 
   depends_on = [
-    aws_vpc.nainil
+    aws_vpc.nainil,
+    aws_security_group.load_balancer
   ]
 }
 
-resource "aws_key_pair" "nainil_ec2_key" {
-  key_name   = "nainil_ec2_key"
-  public_key = file(var.public_key_loc)
+
+resource "aws_security_group" "load_balancer" {
+  name   = "load_balancer"
+  vpc_id = aws_vpc.nainil.id
+
+  #Incoming traffic
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [var.ingress_cidr]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [var.ingress_cidr]
+  }
+
+  egress {
+    from_port   = 0
+    protocol    = "-1"
+    to_port     = 0
+    cidr_blocks = [var.ingress_cidr]
+  }
+
+  tags = {
+    Name = "load_balancer"
+  }
 
   depends_on = [
     aws_vpc.nainil
   ]
 }
 
-resource "aws_instance" "nainil_aws" {
-  #ami                        = var.my_ami_id
-  ami                         = data.aws_ami.recent.id
-  instance_type               = var.instance_type
-  key_name                    = aws_key_pair.nainil_ec2_key.key_name
-  subnet_id                   = aws_subnet.nainil_public_subnet[0].id
-  associate_public_ip_address = true
 
-  user_data = <<EOF
+data "template_file" "user_data" {
+
+  template = <<EOF
 
 #!/bin/bash
 sudo touch /etc/systemd/system/service.env
@@ -205,35 +233,129 @@ sudo sh -c "echo 'DB_PASSWORD=${aws_db_instance.mysql_db.password}' >> /etc/syst
 sudo sh -c "echo 'AWS_REGION=${var.region}' >> /etc/systemd/system/service.env"
 sudo sh -c "echo 'AWS_BUCKET_NAME=${aws_s3_bucket.my_image_bucket.bucket}' >> /etc/systemd/system/service.env"
 
-
 sudo systemctl start app2.service
 sudo systemctl enable app2.service
-
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/cloudwatch-config.json
-
 
 EOF
 
-  iam_instance_profile = aws_iam_instance_profile.my_profile.id
-  #   security_groups = ["application_security_group"]
+}
+resource "aws_key_pair" "nainil_ec2_key" {
+  key_name   = "nainil_ec2_key"
+  public_key = file(var.public_key_loc)
+
+  depends_on = [
+    aws_vpc.nainil
+  ]
+}
+
+resource "aws_launch_template" "asg_launch_config" {
+  image_id      = data.aws_ami.recent.id
+  instance_type = var.instance_type
+  key_name      = aws_key_pair.nainil_ec2_key.key_name
+
   vpc_security_group_ids = [aws_security_group.application.id]
 
-  disable_api_termination = var.disable_api_termination
-  root_block_device {
-    volume_size           = var.volume_size
-    volume_type           = var.volume_type
-    delete_on_termination = var.delete_on_termination
+  block_device_mappings {
+    device_name = data.aws_ami.recent.root_device_name
+    ebs {
+      volume_size           = var.volume_size
+      volume_type           = var.volume_type
+      delete_on_termination = var.delete_on_termination
+    }
   }
 
-  tags = {
-    Name = "EC2 Instance ${timestamp()}"
+  user_data = base64encode(data.template_file.user_data.rendered)
+
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.my_profile.name
   }
+
+  disable_api_termination = var.disable_api_termination
+
+
+  depends_on = [
+    aws_key_pair.nainil_ec2_key,
+    aws_security_group.application,
+    aws_iam_instance_profile.my_profile
+  ]
+}
+
+#
+# resource "aws_instance" "nainil_aws" {
+#   #ami                        = var.my_ami_id
+#   ami                         = data.aws_ami.recent.id
+#   instance_type               = var.instance_type
+#   key_name                    = aws_key_pair.nainil_ec2_key.key_name
+#   subnet_id                   = aws_subnet.nainil_public_subnet[0].id
+#   associate_public_ip_address = true
+#
+#   user_data = <<EOF
+#
+# #!/bin/bash
+# sudo touch /etc/systemd/system/service.env
+# sudo sh -c "echo 'DB_USERNAME=${aws_db_instance.mysql_db.username}' >> /etc/systemd/system/service.env"
+# sudo sh -c "echo 'DB_HOST=${aws_db_instance.mysql_db.address}' >> /etc/systemd/system/service.env"
+# sudo sh -c "echo 'DB_PORT=3306' >> /etc/systemd/system/service.env"
+#
+# sudo sh -c "echo 'DB_NAME=${aws_db_instance.mysql_db.db_name}' >> /etc/systemd/system/service.env"
+# sudo sh -c "echo 'DB_PASSWORD=${aws_db_instance.mysql_db.password}' >> /etc/systemd/system/service.env"
+# sudo sh -c "echo 'AWS_REGION=${var.region}' >> /etc/systemd/system/service.env"
+# sudo sh -c "echo 'AWS_BUCKET_NAME=${aws_s3_bucket.my_image_bucket.bucket}' >> /etc/systemd/system/service.env"
+#
+#
+# sudo systemctl start app2.service
+# sudo systemctl enable app2.service
+#
+# sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/cloudwatch-config.json
+#
+#
+# EOF
+#
+#   iam_instance_profile = aws_iam_instance_profile.my_profile.id
+#   #   security_groups = ["application_security_group"]
+#   vpc_security_group_ids = [aws_security_group.application.id]
+#
+#   disable_api_termination = var.disable_api_termination
+#   root_block_device {
+#     volume_size           = var.volume_size
+#     volume_type           = var.volume_type
+#     delete_on_termination = var.delete_on_termination
+#   }
+#
+#   tags = {
+#     Name = "EC2 Instance ${timestamp()}"
+#   }
+#
+#   depends_on = [
+#     aws_subnet.nainil_public_subnet,
+#     aws_security_group.application
+#   ]
+#
+# }
+
+
+resource "aws_autoscaling_group" "asg_launch_config" {
+  name                = "asg_launch_config"
+  min_size            = 1
+  max_size            = 3
+  desired_capacity    = 1
+  default_cooldown    = 60
+  vpc_zone_identifier = [for subnet in aws_subnet.nainil_public_subnet : subnet.id]
+
+  launch_template {
+    id      = aws_launch_template.asg_launch_config.id
+    version = aws_launch_template.asg_launch_config.latest_version
+  }
+
+  target_group_arns = [aws_lb_target_group.webapp_target_group.arn]
 
   depends_on = [
     aws_subnet.nainil_public_subnet,
-    aws_security_group.application
+    aws_launch_template.asg_launch_config,
+    aws_lb_target_group.webapp_target_group
   ]
-
 }
 
 resource "aws_db_subnet_group" "my_db_subnet" {
@@ -247,6 +369,117 @@ resource "aws_db_subnet_group" "my_db_subnet" {
   depends_on = [
     aws_subnet.nainil_private_subnet
   ]
+}
+
+
+#Autoscalling Policy
+resource "aws_autoscaling_policy" "WebServerScaleUpPolicy" {
+  name                   = "WebServerScaleUpPolicy"
+  adjustment_type        = "ChangeInCapacity"
+  autoscaling_group_name = aws_autoscaling_group.asg_launch_config.name
+  cooldown               = 60
+  scaling_adjustment     = 1
+}
+
+resource "aws_autoscaling_policy" "WebServerScaleDownPolicy" {
+  name                   = "WebServerScaleDownPolicy"
+  adjustment_type        = "ChangeInCapacity"
+  autoscaling_group_name = aws_autoscaling_group.asg_launch_config.name
+  cooldown               = 60
+  scaling_adjustment     = -1
+}
+
+resource "aws_cloudwatch_metric_alarm" "scaleDown" {
+  alarm_name          = "terraform-scaleDown"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "15"
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.asg_launch_config.name
+  }
+  alarm_description         = "Scale Down when average cpu is below 15%"
+  alarm_actions             = ["${aws_autoscaling_policy.WebServerScaleDownPolicy.arn}"]
+  insufficient_data_actions = []
+}
+
+resource "aws_cloudwatch_metric_alarm" "scaleUp" {
+  alarm_name          = "terraform-scaleUp"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "25"
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.asg_launch_config.name
+  }
+  alarm_description         = "Scale Up when average cpu is above 25%"
+  alarm_actions             = ["${aws_autoscaling_policy.WebServerScaleUpPolicy.arn}"]
+  insufficient_data_actions = []
+}
+
+
+resource "aws_lb" "temp_lb" {
+  name               = "temp-lb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.load_balancer.id]
+  subnets            = [for subnet in aws_subnet.nainil_public_subnet : subnet.id]
+
+  tags = {
+    Name = "webapp_lb"
+  }
+
+  depends_on = [
+    aws_security_group.load_balancer,
+    aws_subnet.nainil_public_subnet
+  ]
+}
+
+resource "aws_lb_listener" "temp_lb_listener" {
+  load_balancer_arn = aws_lb.temp_lb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.webapp_target_group.arn
+  }
+  depends_on = [
+    aws_lb.temp_lb,
+    aws_lb_target_group.webapp_target_group
+  ]
+}
+
+resource "aws_lb_target_group" "webapp_target_group" {
+  name_prefix = "webapp"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.nainil.id
+  target_type = "instance"
+
+  health_check {
+    healthy_threshold   = 3
+    unhealthy_threshold = 5
+    timeout             = 5
+    interval            = 30
+    path                = "/healthz"
+    port                = "8080"
+    matcher             = "200"
+  }
+
+  depends_on = [
+    aws_vpc.nainil
+  ]
+}
+
+resource "aws_cloudwatch_log_group" "csye6225" {
+  name = "csye6225"
 }
 
 resource "aws_db_instance" "mysql_db" {
@@ -440,13 +673,13 @@ resource "aws_iam_policy" "cloudwatch_agent_policy" {
 }
 
 
-output "public_ip" {
-  value = aws_instance.nainil_aws.public_ip
-}
-
+# output "public_ip" {
+#   value = aws_instance.nainil_aws.public_ip
+# }
 
 data "aws_route53_zone" "main" {
-  name = var.domain_name
+  name         = var.domain_name
+  private_zone = false
 }
 
 resource "aws_route53_record" "web" {
@@ -454,14 +687,20 @@ resource "aws_route53_record" "web" {
   type    = "A"
   zone_id = data.aws_route53_zone.main.zone_id
 
-  ttl = var.ttl_nainil
-  records = [
-    aws_instance.nainil_aws.public_ip,
-  ]
+  alias {
+    name                   = aws_lb.temp_lb.dns_name
+    zone_id                = aws_lb.temp_lb.zone_id
+    evaluate_target_health = true
+  }
+  #ttl = var.ttl_nainil
+  #   records = [
+  #     aws_instance.nainil_aws.public_ip,
+  #   ]
 
   depends_on = [
-    aws_instance.nainil_aws,
-    data.aws_route53_zone.main
+    # aws_instance.nainil_aws,
+    data.aws_route53_zone.main,
+    aws_lb.temp_lb
   ]
 }
 
@@ -541,6 +780,8 @@ resource "aws_iam_instance_profile" "my_profile" {
     aws_iam_role.EC2-CSYE6225
   ]
 }
+
+
 
 
 
