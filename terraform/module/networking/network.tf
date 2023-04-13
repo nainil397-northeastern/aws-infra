@@ -217,6 +217,133 @@ resource "aws_security_group" "load_balancer" {
   ]
 }
 
+resource "aws_kms_key" "ebs_key" {
+  description              = "EBS KMS Key"
+  key_usage                = "ENCRYPT_DECRYPT"
+  customer_master_key_spec = "SYMMETRIC_DEFAULT"
+  deletion_window_in_days  = 7
+  enable_key_rotation      = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:*"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow administration of the key"
+        Effect = "Allow"
+        Principal = {
+          AWS = ["arn:aws:iam::865632327924:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing",
+          "arn:aws:iam::865632327924:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"]
+        }
+        Action = [
+          "kms:Create*",
+          "kms:Describe*",
+          "kms:Enable*",
+          "kms:List*",
+          "kms:Put*",
+          "kms:Update*",
+          "kms:Revoke*",
+          "kms:Disable*",
+          "kms:Get*",
+          "kms:Delete*",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow use of the key for EBS encryption"
+        Effect = "Allow"
+        Principal = {
+          Service = ["ec2.amazonaws.com"]
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_kms_key" "rds_key" {
+  description              = "RDS KMS Key"
+  key_usage                = "ENCRYPT_DECRYPT"
+  customer_master_key_spec = "SYMMETRIC_DEFAULT"
+  deletion_window_in_days  = 7
+  enable_key_rotation      = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:*"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow administration of the key"
+        Effect = "Allow"
+        Principal = {
+          AWS = ["arn:aws:iam::865632327924:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS"]
+        }
+        Action = [
+          "kms:Create*",
+          "kms:Describe*",
+          "kms:Enable*",
+          "kms:List*",
+          "kms:Put*",
+          "kms:Update*",
+          "kms:Revoke*",
+          "kms:Disable*",
+          "kms:Get*",
+          "kms:Delete*",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow use of the key for RDS encryption"
+        Effect = "Allow"
+        Principal = {
+          Service = ["rds.amazonaws.com"]
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 
 data "template_file" "user_data" {
 
@@ -250,6 +377,7 @@ resource "aws_key_pair" "nainil_ec2_key" {
 }
 
 resource "aws_launch_template" "asg_launch_config" {
+  name          = "nainil_check"
   image_id      = data.aws_ami.recent.id
   instance_type = var.instance_type
   key_name      = aws_key_pair.nainil_ec2_key.key_name
@@ -262,8 +390,12 @@ resource "aws_launch_template" "asg_launch_config" {
       volume_size           = var.volume_size
       volume_type           = var.volume_type
       delete_on_termination = var.delete_on_termination
+      encrypted             = true
+      kms_key_id            = aws_kms_key.ebs_key.arn
     }
+
   }
+
 
   user_data = base64encode(data.template_file.user_data.rendered)
 
@@ -278,7 +410,9 @@ resource "aws_launch_template" "asg_launch_config" {
   depends_on = [
     aws_key_pair.nainil_ec2_key,
     aws_security_group.application,
-    aws_iam_instance_profile.my_profile
+    aws_iam_instance_profile.my_profile,
+    aws_kms_key.ebs_key
+
   ]
 }
 
@@ -443,8 +577,9 @@ resource "aws_lb" "temp_lb" {
 
 resource "aws_lb_listener" "temp_lb_listener" {
   load_balancer_arn = aws_lb.temp_lb.arn
-  port              = 80
-  protocol          = "HTTP"
+  port              = 443
+  protocol          = "HTTPS"
+  certificate_arn   = var.nainil_certificate
 
   default_action {
     type             = "forward"
@@ -499,10 +634,13 @@ resource "aws_db_instance" "mysql_db" {
   parameter_group_name   = aws_db_parameter_group.my_parameter_group.name
   apply_immediately      = true
   skip_final_snapshot    = true
+  storage_encrypted      = true
+  kms_key_id             = aws_kms_key.rds_key.arn
   depends_on = [
     aws_db_subnet_group.my_db_subnet,
     aws_db_parameter_group.my_parameter_group,
-    aws_security_group.database
+    aws_security_group.database,
+    aws_kms_key.rds_key
   ]
 }
 

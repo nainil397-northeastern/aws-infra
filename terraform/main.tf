@@ -27,5 +27,6 @@ module "mynetwork" {
   db_name                 = var.db_name
   db_password             = var.db_password
   db_username             = var.db_username
+  nainil_certificate      = var.nainil_certificate
 
 }
