@@ -143,6 +143,9 @@ variable "db_name" {
   type = string
 }
 
+variable "nainil_certificate" {
+  type = string
+}
 data "aws_availability_zones" "azs" {}
 
 
