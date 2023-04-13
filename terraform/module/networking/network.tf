@@ -131,14 +131,13 @@ resource "aws_security_group" "application" {
   vpc_id = aws_vpc.nainil.id
 
   #Incoming traffic
-  ingress {
-    from_port = 22
-    to_port   = 22
-    protocol  = "tcp"
-    # cidr_blocks = [var.ingress_cidr]
-    security_groups = [aws_security_group.load_balancer.id]
-
-  }
+  # ingress {
+  #  from_port = 22
+  #  to_port   = 22
+  #  protocol  = "tcp"
+  # cidr_blocks = [var.ingress_cidr]
+  # security_groups = [aws_security_group.load_balancer.id]
+  # }
 
   #   ingress {
   #     from_port   = 80
